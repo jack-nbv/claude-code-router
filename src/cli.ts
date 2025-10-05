@@ -60,6 +60,41 @@ async function main() {
   const isRunning = await isServiceRunning()
   switch (command) {
     case "start":
+      // Check if already running
+      if (isRunning) {
+        console.log("Service is already running.");
+        const serviceInfo = await getServiceInfo();
+        console.log(`Endpoint: ${serviceInfo.endpoint}`);
+        process.exit(0);
+      }
+      
+      // Start the service in the background (detached)
+      console.log("Starting claude code router service...");
+      const startCliPath = join(__dirname, "cli.js");
+      const startProcessBg = spawn("node", [startCliPath, "_start_internal"], {
+        detached: true,
+        stdio: "ignore",
+      });
+
+      startProcessBg.on("error", (error) => {
+        console.error("Failed to start service:", error.message);
+        process.exit(1);
+      });
+
+      startProcessBg.unref();
+      
+      // Wait for service to be ready
+      if (await waitForService()) {
+        console.log("✅ Service started successfully in the background.");
+        const serviceInfo = await getServiceInfo();
+        console.log(`Endpoint: ${serviceInfo.endpoint}`);
+      } else {
+        console.error("Service startup timeout. Please check the logs.");
+        process.exit(1);
+      }
+      break;
+    case "_start_internal":
+      // Internal command to actually start the server (not detached)
       run();
       break;
     case "stop":
@@ -112,30 +147,18 @@ async function main() {
     case "code":
       if (!isRunning) {
         console.log("Service not running, starting service...");
-        const cliPath = join(__dirname, "cli.js");
-        const startProcess = spawn("node", [cliPath, "start"], {
+        const codeCliPath = join(__dirname, "cli.js");
+        const codeStartProcess = spawn("node", [codeCliPath, "_start_internal"], {
           detached: true,
           stdio: "ignore",
         });
 
-        // let errorMessage = "";
-        // startProcess.stderr?.on("data", (data) => {
-        //   errorMessage += data.toString();
-        // });
-
-        startProcess.on("error", (error) => {
+        codeStartProcess.on("error", (error) => {
           console.error("Failed to start service:", error.message);
           process.exit(1);
         });
 
-        // startProcess.on("close", (code) => {
-        //   if (code !== 0 && errorMessage) {
-        //     console.error("Failed to start service:", errorMessage.trim());
-        //     process.exit(1);
-        //   }
-        // });
-
-        startProcess.unref();
+        codeStartProcess.unref();
 
         if (await waitForService()) {
           // Join all code arguments into a single string to preserve spaces within quotes
@@ -157,18 +180,18 @@ async function main() {
       // Check if service is running
       if (!isRunning) {
         console.log("Service not running, starting service...");
-        const cliPath = join(__dirname, "cli.js");
-        const startProcess = spawn("node", [cliPath, "start"], {
+        const uiCliPath = join(__dirname, "cli.js");
+        const uiStartProcess = spawn("node", [uiCliPath, "_start_internal"], {
           detached: true,
           stdio: "ignore",
         });
 
-        startProcess.on("error", (error) => {
+        uiStartProcess.on("error", (error) => {
           console.error("Failed to start service:", error.message);
           process.exit(1);
         });
 
-        startProcess.unref();
+        uiStartProcess.unref();
 
         if (!(await waitForService())) {
           // If service startup fails, try to start with default config
@@ -207,12 +230,13 @@ async function main() {
             );
 
             // Try starting the service again
-            const restartProcess = spawn("node", [cliPath, "start"], {
+            const uiFallbackCliPath = join(__dirname, "cli.js");
+            const uiFallbackProcess = spawn("node", [uiFallbackCliPath, "_start_internal"], {
               detached: true,
               stdio: "ignore",
             });
 
-            restartProcess.on("error", (error) => {
+            uiFallbackProcess.on("error", (error) => {
               console.error(
                 "Failed to start service with default config:",
                 error.message
@@ -220,7 +244,7 @@ async function main() {
               process.exit(1);
             });
 
-            restartProcess.unref();
+            uiFallbackProcess.unref();
 
             if (!(await waitForService(15000))) {
               // Wait a bit longer for the first start
@@ -297,18 +321,18 @@ async function main() {
 
       // Start the service again in the background
       console.log("Starting claude code router service...");
-      const cliPath = join(__dirname, "cli.js");
-      const startProcess = spawn("node", [cliPath, "start"], {
+      const restartCliPath = join(__dirname, "cli.js");
+      const restartProcess = spawn("node", [restartCliPath, "_start_internal"], {
         detached: true,
         stdio: "ignore",
       });
 
-      startProcess.on("error", (error) => {
+      restartProcess.on("error", (error) => {
         console.error("Failed to start service:", error);
         process.exit(1);
       });
 
-      startProcess.unref();
+      restartProcess.unref();
       console.log("✅ Service started successfully in the background.");
       break;
     case "-h":

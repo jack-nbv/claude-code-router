@@ -10,6 +10,7 @@ import { LogViewer } from "@/components/LogViewer";
 import { Button } from "@/components/ui/button";
 import { useConfig } from "@/components/ConfigProvider";
 import { api } from "@/lib/api";
+import { safeLocalStorage } from "@/lib/storage";
 import { Settings, Languages, Save, RefreshCw, FileJson, CircleArrowUp, FileText } from "lucide-react";
 import {
   Popover,
@@ -177,7 +178,7 @@ function App() {
       }
       
       // For empty API key, allow access without checking config
-      const apiKey = localStorage.getItem('apiKey');
+      const apiKey = safeLocalStorage.getItem('apiKey');
       if (!apiKey) {
         setIsCheckingAuth(false);
         return;

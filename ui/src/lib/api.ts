@@ -1,4 +1,5 @@
 import type { Config, Provider, Transformer } from '@/types';
+import { safeLocalStorage } from '@/lib/storage';
 
 // 日志聚合响应类型
 interface GroupedLogsResponse {
@@ -25,7 +26,7 @@ class ApiClient {
   constructor(baseUrl: string = '/api', apiKey: string = '') {
     this.baseUrl = baseUrl;
     // Load API key from localStorage if available
-    this.apiKey = apiKey || localStorage.getItem('apiKey') || '';
+    this.apiKey = apiKey || safeLocalStorage.getItem('apiKey') || '';
     // Load temp API key from URL if available
     this.tempApiKey = new URLSearchParams(window.location.search).get('tempApiKey');
   }
@@ -40,9 +41,9 @@ class ApiClient {
     this.apiKey = apiKey;
     // Save API key to localStorage
     if (apiKey) {
-      localStorage.setItem('apiKey', apiKey);
+      safeLocalStorage.setItem('apiKey', apiKey);
     } else {
-      localStorage.removeItem('apiKey');
+      safeLocalStorage.removeItem('apiKey');
     }
   }
   
@@ -89,7 +90,7 @@ class ApiClient {
       // Handle 401 Unauthorized responses
       if (response.status === 401) {
         // Remove API key when it's invalid
-        localStorage.removeItem('apiKey');
+        safeLocalStorage.removeItem('apiKey');
         // Redirect to login page if not already there
         // For memory router, we need to use the router instance
         // We'll dispatch a custom event that the app can listen to

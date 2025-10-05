@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { api } from '@/lib/api';
+import { safeLocalStorage } from '@/lib/storage';
 
 export function Login() {
   const { t } = useTranslation();
@@ -17,7 +18,7 @@ export function Login() {
   // Check if user is already authenticated
   useEffect(() => {
     const checkAuth = async () => {
-      const apiKey = localStorage.getItem('apiKey');
+      const apiKey = safeLocalStorage.getItem('apiKey');
       if (apiKey) {
         setIsLoading(true);
         // Verify the API key is still valid
@@ -26,7 +27,7 @@ export function Login() {
           navigate('/dashboard');
         } catch {
           // If verification fails, remove the API key
-          localStorage.removeItem('apiKey');
+          safeLocalStorage.removeItem('apiKey');
         } finally {
           setIsLoading(false);
         }

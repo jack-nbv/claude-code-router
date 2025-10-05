@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useRef } from 'react';
 import type { ReactNode, Dispatch, SetStateAction } from 'react';
 import { api } from '@/lib/api';
+import { safeLocalStorage } from '@/lib/storage';
 import type { Config, StatusLineConfig } from '@/types';
 
 interface ConfigContextType {
@@ -27,13 +28,13 @@ interface ConfigProviderProps {
 export function ConfigProvider({ children }: ConfigProviderProps) {
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [hasFetched, setHasFetched] = useState<boolean>(false);
-  const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('apiKey'));
+  const hasFetchedRef = useRef<boolean>(false);
+  const [apiKey, setApiKey] = useState<string | null>(safeLocalStorage.getItem('apiKey'));
 
   // Listen for localStorage changes
   useEffect(() => {
     const handleStorageChange = () => {
-      setApiKey(localStorage.getItem('apiKey'));
+      setApiKey(safeLocalStorage.getItem('apiKey'));
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -45,7 +46,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
   useEffect(() => {
     const fetchConfig = async () => {
       // Reset fetch state when API key changes
-      setHasFetched(false);
+      hasFetchedRef.current = false;
       setConfig(null);
       setError(null);
     };
@@ -57,10 +58,10 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     const fetchConfig = async () => {
       // Prevent duplicate API calls in React StrictMode
       // Skip if we've already fetched
-      if (hasFetched) {
+      if (hasFetchedRef.current) {
         return;
       }
-      setHasFetched(true);
+      hasFetchedRef.current = true;
       
       try {
         // Try to fetch config regardless of API key presence
@@ -145,7 +146,7 @@ export function ConfigProvider({ children }: ConfigProviderProps) {
     };
 
     fetchConfig();
-  }, [hasFetched, apiKey]);
+  }, [apiKey]);
 
   return (
     <ConfigContext.Provider value={{ config, setConfig, error }}>

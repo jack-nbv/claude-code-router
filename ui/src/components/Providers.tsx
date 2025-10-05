@@ -39,6 +39,43 @@ export function Providers() {
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>("");
+  const [vertexCredentials, setVertexCredentials] = useState({
+    keyFile: '',
+    keyJson: '',
+    project: '',
+    location: 'us-central1',
+    credentialMode: 'file' as 'file' | 'json'
+  });
+  const [isProjectIdAutoFilled, setIsProjectIdAutoFilled] = useState(false);
+
+  // Auto-extract project ID from service account JSON
+  const extractProjectIdFromJson = (jsonString: string): string | null => {
+    try {
+      const credentials = JSON.parse(jsonString);
+      return credentials.project_id || null;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Auto-extract project ID from file path
+  const extractProjectIdFromFile = async (filePath: string): Promise<string | null> => {
+    try {
+      const response = await fetch(`file://${filePath}`);
+      if (!response.ok) return null;
+      const content = await response.text();
+      return extractProjectIdFromJson(content);
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // Generate Vertex API URL based on location
+  const generateVertexApiUrl = (location: string): string => {
+    // For Vertex AI, the transformer in @musistudio/llms builds the full path
+    // We only need to provide the domain with the location
+    return `https://${location}-aiplatform.googleapis.com/`;
+  };
   const comboInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -103,6 +140,15 @@ export function Providers() {
     }));
     setApiKeyError(null);
     setNameError(null);
+    
+    // Reset vertex credentials for new provider
+    setVertexCredentials({
+      keyFile: '',
+      keyJson: '',
+      project: '',
+      location: 'us-central1',
+      credentialMode: 'file'
+    });
   };
 
   const handleEditProvider = (index: number) => {
@@ -117,6 +163,17 @@ export function Providers() {
     }));
     setApiKeyError(null);
     setNameError(null);
+    
+    // Initialize vertex credentials from provider data
+    const vertexAuth = (provider as any).vertexAuth || {};
+    const loadedCredentials = {
+      keyFile: vertexAuth.keyFile || '',
+      keyJson: vertexAuth.keyJson ? JSON.stringify(vertexAuth.keyJson, null, 2) : '',
+      project: vertexAuth.project || '',
+      location: vertexAuth.location || 'us-central1',
+      credentialMode: (vertexAuth.keyFile ? 'file' : 'json') as 'file' | 'json'
+    };
+    setVertexCredentials(loadedCredentials);
   };
 
   const handleSaveProvider = () => {
@@ -143,22 +200,64 @@ export function Providers() {
       return;
     }
     
-    // Validate API key
-    if (!editingProviderData.api_key || editingProviderData.api_key.trim() === '') {
+    // Check if vertex-gemini transformer is used
+    const hasVertexTransformer = editingProviderData.transformer?.use?.some((transformer: any) => {
+      if (typeof transformer === 'string') return transformer === 'vertex-gemini';
+      if (Array.isArray(transformer) && transformer.length > 0) return transformer[0] === 'vertex-gemini';
+      return false;
+    });
+    
+    // Validate API key (relax for vertex-gemini)
+    if (!hasVertexTransformer && (!editingProviderData.api_key || editingProviderData.api_key.trim() === '')) {
       setApiKeyError(t("providers.api_key_required"));
       return;
+    }
+    
+    // Auto-fill API key for vertex if empty
+    if (hasVertexTransformer && (!editingProviderData.api_key || editingProviderData.api_key.trim() === '')) {
+      editingProviderData.api_key = 'vertex';
     }
     
     // Clear errors if validation passes
     setApiKeyError(null);
     setNameError(null);
     
-    if (editingProviderIndex !== null && editingProviderData) {
+    // Handle vertex credentials if vertex-gemini transformer is present
+    let finalProviderData = editingProviderData;
+    if (hasVertexTransformer) {
+      const updatedProvider = { ...editingProviderData } as any;
+      
+      // Auto-set the API URL based on location
+      if (vertexCredentials.location) {
+        updatedProvider.api_base_url = generateVertexApiUrl(vertexCredentials.location);
+      }
+      
+      updatedProvider.vertexAuth = {
+        project: vertexCredentials.project,
+        location: vertexCredentials.location
+      };
+      
+      if (vertexCredentials.credentialMode === 'file' && vertexCredentials.keyFile) {
+        updatedProvider.vertexAuth.keyFile = vertexCredentials.keyFile;
+      } else if (vertexCredentials.credentialMode === 'json' && vertexCredentials.keyJson) {
+        try {
+          updatedProvider.vertexAuth.keyJson = JSON.parse(vertexCredentials.keyJson);
+        } catch (e) {
+          console.error('Failed to parse vertex JSON credentials:', e);
+          return; // Don't save if JSON is invalid
+        }
+      }
+      
+      finalProviderData = updatedProvider;
+      setEditingProviderData(updatedProvider);
+    }
+    
+    if (editingProviderIndex !== null && finalProviderData) {
       const newProviders = [...config.Providers];
       if (isNewProvider) {
-        newProviders.push(editingProviderData);
+        newProviders.push(finalProviderData);
       } else {
-        newProviders[editingProviderIndex] = editingProviderData;
+        newProviders[editingProviderIndex] = finalProviderData;
       }
       setConfig({ ...config, Providers: newProviders });
     }
@@ -1011,6 +1110,199 @@ export function Providers() {
                 </div>
               )}
               
+              {/* Vertex Gemini Authentication Panel */}
+              {(() => {
+                const isVertexSelected = editingProvider?.transformer?.use?.some((transformer: any) => {
+                  if (typeof transformer === 'string') return transformer === 'vertex-gemini';
+                  if (Array.isArray(transformer) && transformer.length > 0) return transformer[0] === 'vertex-gemini';
+                  return false;
+                });
+                
+                return isVertexSelected ? (
+                  <div className="space-y-4 border border-blue-200 rounded-lg p-4 bg-blue-50">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-semibold text-blue-800">Vertex Gemini Authentication</Label>
+                      <Badge variant="outline" className="text-xs">Required for vertex-gemini transformer</Badge>
+                    </div>
+                    
+                    {/* Credential Mode Selection */}
+                    <div className="space-y-2">
+                      <Label className="text-sm">Authentication Method</Label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="credentialMode"
+                            value="file"
+                            checked={vertexCredentials.credentialMode === 'file'}
+                            onChange={(e) => setVertexCredentials(prev => ({ ...prev, credentialMode: e.target.value as 'file' | 'json' }))}
+                          />
+                          <span className="text-sm">Service Account Key File Path</span>
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="credentialMode"
+                            value="json"
+                            checked={vertexCredentials.credentialMode === 'json'}
+                            onChange={(e) => setVertexCredentials(prev => ({ ...prev, credentialMode: e.target.value as 'file' | 'json' }))}
+                          />
+                          <span className="text-sm">Paste JSON (discouraged)</span>
+                        </label>
+                      </div>
+                    </div>
+                    
+                    {/* Key File Path */}
+                    {vertexCredentials.credentialMode === 'file' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="vertex-keyfile" className="text-sm">Service Account Key File Path</Label>
+                        <Input
+                          id="vertex-keyfile"
+                          placeholder="/path/to/service-account-key.json"
+                          value={vertexCredentials.keyFile}
+                          onChange={(e) => {
+                            const filePath = e.target.value;
+                            setVertexCredentials(prev => ({ ...prev, keyFile: filePath }));
+                            
+                            // Try to auto-extract project ID from file
+                            if (filePath && filePath.endsWith('.json')) {
+                              // Use fetch or FileReader if available
+                              fetch(filePath)
+                                .then(res => res.text())
+                                .then(content => {
+                                  const projectId = extractProjectIdFromJson(content);
+                                  if (projectId && !vertexCredentials.project) {
+                                    setVertexCredentials(prev => ({ ...prev, project: projectId }));
+                                  }
+                                })
+                                .catch(() => {
+                                  // File read failed, user will need to enter project manually
+                                });
+                            }
+                          }}
+                          onBlur={async (e) => {
+                            const newPath = e.target.value;
+                            if (newPath && newPath.endsWith('.json')) {
+                              // Try to auto-extract project ID from file using backend API
+                              try {
+                                const response = await fetch('/api/parse-service-account', {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({ filePath: newPath }),
+                                });
+                                
+                                if (response.ok) {
+                                  const data = await response.json();
+                                  if (data.projectId) {
+                                    setVertexCredentials(prev => ({
+                                      ...prev,
+                                      project: data.projectId
+                                    }));
+                                    setIsProjectIdAutoFilled(true);
+                                  }
+                                } else {
+                                  console.error('Failed to parse service account file');
+                                }
+                              } catch (error) {
+                                console.error('Error parsing service account:', error);
+                              }
+                            }
+                          }}
+                        />
+                        <p className="text-xs text-gray-500">
+                          💡 Project ID will be auto-extracted if possible
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Key JSON */}
+                    {vertexCredentials.credentialMode === 'json' && (
+                      <div className="space-y-2">
+                        <Label htmlFor="vertex-keyjson" className="text-sm">Service Account JSON</Label>
+                        <textarea
+                          id="vertex-keyjson"
+                          className="w-full min-h-[100px] p-2 text-xs border rounded resize-y"
+                          placeholder='{"type": "service_account", "project_id": "...", ...}'
+                          value={vertexCredentials.keyJson}
+                          onChange={(e) => {
+                            const jsonString = e.target.value;
+                            setVertexCredentials(prev => ({ ...prev, keyJson: jsonString }));
+                            
+                            // Auto-extract project ID from JSON
+                            const projectId = extractProjectIdFromJson(jsonString);
+                            if (projectId) {
+                              setVertexCredentials(prev => ({ ...prev, project: projectId }));
+                              setIsProjectIdAutoFilled(true);
+                            }
+                          }}
+                        />
+                        <p className="text-xs text-orange-600">
+                          ⚠️ JSON will be written to ~/.claude-code-router/vertex-gemini-key.json then cleared from UI
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          💡 Project ID will be auto-extracted from the JSON
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Project and Location */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="vertex-project" className="text-sm">Project ID</Label>
+                        <Input
+                          id="vertex-project"
+                          placeholder="my-gcp-project"
+                          value={vertexCredentials.project}
+                          onChange={(e) => {
+                            setVertexCredentials(prev => ({ ...prev, project: e.target.value }));
+                            setIsProjectIdAutoFilled(false);
+                          }}
+                          readOnly={isProjectIdAutoFilled}
+                          disabled={isProjectIdAutoFilled}
+                          className={isProjectIdAutoFilled ? "bg-gray-100 cursor-not-allowed" : ""}
+                        />
+                        <p className="text-xs text-gray-500">
+                          {isProjectIdAutoFilled ? "Auto-filled from service account (read-only)" : "Will be auto-extracted if possible"}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="vertex-location" className="text-sm">Location</Label>
+                        <Input
+                          id="vertex-location"
+                          placeholder="us-central1"
+                          value={vertexCredentials.location}
+                          onChange={(e) => {
+                            const newLocation = e.target.value;
+                            setVertexCredentials(prev => ({ ...prev, location: newLocation }));
+                            
+                            // Auto-update API URL when location changes
+                            if (editingProviderData && newLocation) {
+                              const newApiUrl = generateVertexApiUrl(newLocation);
+                              setEditingProviderData(prev => prev ? { ...prev, api_base_url: newApiUrl } : null);
+                            }
+                          }}
+                        />
+                        <p className="text-xs text-gray-500">Updates API URL automatically</p>
+                      </div>
+                    </div>
+                    
+                    {/* Auto-generated API URL Display */}
+                    {vertexCredentials.location && (
+                      <div className="space-y-2 bg-gray-50 p-3 rounded">
+                        <Label className="text-sm text-gray-700">Auto-generated API Full URL</Label>
+                        <div className="text-xs font-mono text-gray-600 break-all">
+                          {generateVertexApiUrl(vertexCredentials.location)}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          This URL will be set as the provider's API Base URL
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : null;
+              })()}
             </div>
           )}
           <div className="space-y-3 mt-auto">

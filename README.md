@@ -323,7 +323,145 @@ Transformers allow you to modify the request and response payloads to ensure com
 - `sampling`: Used to process sampling information fields such as `temperature`, `top_p`, `top_k`, and `repetition_penalty`.
 - `enhancetool`: Adds a layer of error tolerance to the tool call parameters returned by the LLM (this will cause the tool call information to no longer be streamed).
 - `cleancache`: Clears the `cache_control` field from requests.
-- `vertex-gemini`: Handles the Gemini API using Vertex authentication.
+- `vertex-gemini`: Handles the Gemini API using Vertex AI authentication with service account credentials.
+
+#### Configuring Vertex Gemini
+
+**Method 1: Using the UI (Recommended)**
+
+You can configure Vertex Gemini through the web UI by running:
+```shell
+ccr ui
+```
+
+The UI will help you:
+- Upload or paste your service account JSON credentials
+- Automatically extract the project ID
+- Generate the correct API URL based on your location
+- Save the configuration correctly
+
+**Method 2: Manual Configuration**
+
+To manually configure Vertex Gemini in your `config.json`, you need to understand the correct structure:
+
+**Important:** The `api_base_url` for Vertex Gemini should be just the domain with your location, **NOT** the full path. The `vertex-gemini` transformer will construct the complete path automatically.
+
+✅ **Correct format:**
+```json
+{
+  "Providers": [
+    {
+      "name": "Vertex Gemini",
+      "api_base_url": "https://us-central1-aiplatform.googleapis.com/",
+      "api_key": "vertex",
+      "models": ["gemini-2.5-pro", "gemini-2.5-flash"],
+      "transformer": {
+        "use": ["vertex-gemini"]
+      },
+      "vertexAuth": {
+        "project": "my-gcp-project",
+        "location": "us-central1",
+        "keyFile": "/path/to/service-account-key.json"
+      }
+    }
+  ],
+  "Router": {
+    "default": "Vertex Gemini,gemini-2.5-pro"
+  }
+}
+```
+
+❌ **Incorrect format (DO NOT USE):**
+```json
+{
+  "api_base_url": "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/publishers/google/models/"
+}
+```
+
+**Configuration Fields Explained:**
+
+- `api_base_url`: Should be `https://{location}-aiplatform.googleapis.com/` where `{location}` is your GCP region (e.g., `us-central1`, `europe-west1`, `asia-northeast1`)
+- `api_key`: Use the literal string `"vertex"` (this is a placeholder; actual authentication uses the service account)
+- `vertexAuth.project`: Your GCP project ID (found in the service account JSON as `project_id`)
+- `vertexAuth.location`: Your preferred GCP location/region (e.g., `us-central1`)
+- `vertexAuth.keyFile`: Absolute path to your service account JSON key file
+
+**Available Regions:**
+
+Common GCP locations for Vertex AI:
+- `us-central1` (Iowa)
+- `us-east1` (South Carolina)
+- `us-west1` (Oregon)
+- `europe-west1` (Belgium)
+- `europe-west4` (Netherlands)
+- `asia-northeast1` (Tokyo)
+- `asia-southeast1` (Singapore)
+
+**Alternative: Global Configuration**
+
+You can also configure Vertex authentication globally (applies to all Vertex providers) using the `vertexGemini` field:
+
+```json
+{
+  "vertexGemini": {
+    "keyFile": "/path/to/service-account-key.json",
+    "project": "my-gcp-project",
+    "location": "us-central1"
+  },
+  "Providers": [
+    {
+      "name": "Vertex Gemini",
+      "api_base_url": "https://us-central1-aiplatform.googleapis.com/",
+      "api_key": "vertex",
+      "models": ["gemini-2.5-pro"],
+      "transformer": { "use": ["vertex-gemini"] }
+    }
+  ]
+}
+```
+
+Or embed the JSON directly:
+```json
+{
+  "vertexGemini": {
+    "keyJson": {
+      "type": "service_account",
+      "project_id": "my-gcp-project",
+      "private_key_id": "xxxx",
+      "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+      "client_email": "vertex-sa@my-gcp-project.iam.gserviceaccount.com",
+      "client_id": "1234567890",
+      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+      "token_uri": "https://oauth2.googleapis.com/token",
+      "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/..."
+    },
+    "project": "my-gcp-project",
+    "location": "us-central1"
+  },
+  "Providers": [
+    {
+      "name": "Vertex Gemini",
+      "api_base_url": "https://us-central1-aiplatform.googleapis.com/",
+      "api_key": "vertex",
+      "models": ["gemini-2.5-pro"],
+      "transformer": { "use": ["vertex-gemini"] }
+    }
+  ]
+}
+```
+
+**Note:** Provider-specific `vertexAuth` takes precedence over global `vertexGemini` configuration.
+
+**Getting a Service Account Key:**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select your project
+3. Navigate to **IAM & Admin** → **Service Accounts**
+4. Create a new service account or select an existing one
+5. Grant it the **Vertex AI User** role
+6. Click **Keys** → **Add Key** → **Create New Key** → **JSON**
+7. Download the JSON file and use its path in `vertexAuth.keyFile`
 - `chutes-glm` Unofficial support for GLM 4.5 model via Chutes [chutes-glm-transformer.js](https://gist.github.com/vitobotta/2be3f33722e05e8d4f9d2b0138b8c863).
 - `qwen-cli` (experimental): Unofficial support for qwen3-coder-plus model via Qwen CLI [qwen-cli.js](https://gist.github.com/musistudio/f5a67841ced39912fd99e42200d5ca8b).
 - `rovo-cli` (experimental): Unofficial support for gpt-5 via Atlassian Rovo Dev CLI [rovo-cli.js](https://gist.github.com/SaseQ/c2a20a38b11276537ec5332d1f7a5e53).

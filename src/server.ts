@@ -40,6 +40,36 @@ export const createServer = (config: any): Server => {
     return { success: true, message: "Config saved successfully" };
   });
 
+  // Add endpoint to parse service account JSON file
+  server.app.post("/api/parse-service-account", async (req, reply) => {
+    const { filePath } = req.body as { filePath: string };
+    
+    if (!filePath) {
+      reply.status(400).send({ error: "File path is required" });
+      return;
+    }
+
+    try {
+      // Check if file exists
+      if (!existsSync(filePath)) {
+        reply.status(404).send({ error: "File not found" });
+        return;
+      }
+
+      // Read and parse the file
+      const fileContent = readFileSync(filePath, 'utf-8');
+      const credentials = JSON.parse(fileContent);
+
+      // Extract project_id
+      const projectId = credentials.project_id || null;
+
+      return { projectId };
+    } catch (error) {
+      console.error("Failed to parse service account file:", error);
+      reply.status(500).send({ error: "Failed to parse service account file" });
+    }
+  });
+
   // Add endpoint to restart the service with access control
   server.app.post("/api/restart", async (req, reply) => {
     reply.send({ success: true, message: "Service restart initiated" });

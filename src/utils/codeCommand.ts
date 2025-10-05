@@ -1,11 +1,12 @@
 import { spawn, type StdioOptions } from "child_process";
+import { execSync } from "child_process";
 import { readConfigFile } from ".";
 import { closeService } from "./close";
 import {
   decrementReferenceCount,
   incrementReferenceCount,
 } from "./processCheck";
-import { quote } from 'shell-quote';
+
 
 export async function executeCodeCommand(args: string[] = []) {
   // Set environment variables
@@ -20,7 +21,7 @@ export async function executeCodeCommand(args: string[] = []) {
     DISABLE_COST_WARNINGS: 'true',
     API_TIMEOUT_MS: String(config.API_TIMEOUT_MS ?? 600000), // Default to 10 minutes if not set
   };
-  const settingsFlag = {
+  const settingsFlag: any = {
     env
   };
   if (config?.StatusLine?.enabled) {
@@ -51,18 +52,32 @@ export async function executeCodeCommand(args: string[] = []) {
   // Execute claude command
   const claudePath = config?.CLAUDE_PATH || process.env.CLAUDE_PATH || "claude";
 
-  const joinedArgs = args.length > 0 ? quote(args) : "";
+  // Check if claude command exists
+  try {
+    execSync(`command -v ${claudePath}`, { stdio: 'pipe' });
+  } catch (error) {
+    console.error(`Error: Claude Code command not found: '${claudePath}'`);
+    console.log("\nPlease do one of the following:");
+    console.log("1. Install Claude Code globally:");
+    console.log("   npm install -g @anthropic-ai/claude-code");
+    console.log("\n2. Or set CLAUDE_PATH in your config (~/.claude-code-router/config.json):");
+    console.log('   "CLAUDE_PATH": "/path/to/claude"');
+    console.log("\n3. Or set the CLAUDE_PATH environment variable:");
+    console.log("   export CLAUDE_PATH=/path/to/claude");
+    decrementReferenceCount();
+    process.exit(1);
+  }
 
   const stdioConfig: StdioOptions = config.NON_INTERACTIVE_MODE
     ? ["pipe", "inherit", "inherit"] // Pipe stdin for non-interactive
     : "inherit"; // Default inherited behavior
+
   const claudeProcess = spawn(
-    claudePath + (joinedArgs ? ` ${joinedArgs}` : ""),
-    [],
+    claudePath,
+    args,
     {
-      env: process.env,
+      env: { ...process.env, ...env },
       stdio: stdioConfig,
-      shell: true,
     }
   );
 
