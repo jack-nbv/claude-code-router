@@ -1,7 +1,7 @@
 import Server from "@musistudio/llms";
 import { readConfigFile, writeConfigFile, backupConfigFile } from "./utils";
 import { checkForUpdates, performUpdate } from "./utils";
-import { join } from "path";
+import { join, normalize } from "path";
 import fastifyStatic from "@fastify/static";
 import { readdirSync, statSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { homedir } from "os";
@@ -50,14 +50,17 @@ export const createServer = (config: any): Server => {
     }
 
     try {
+      // Normalize the path to handle both Windows and Unix paths
+      const normalizedPath = normalize(filePath);
+      
       // Check if file exists
-      if (!existsSync(filePath)) {
-        reply.status(404).send({ error: "File not found" });
+      if (!existsSync(normalizedPath)) {
+        reply.status(404).send({ error: "File not found", path: normalizedPath });
         return;
       }
 
       // Read and parse the file
-      const fileContent = readFileSync(filePath, 'utf-8');
+      const fileContent = readFileSync(normalizedPath, 'utf-8');
       const credentials = JSON.parse(fileContent);
 
       // Extract project_id
@@ -66,7 +69,7 @@ export const createServer = (config: any): Server => {
       return { projectId };
     } catch (error) {
       console.error("Failed to parse service account file:", error);
-      reply.status(500).send({ error: "Failed to parse service account file" });
+      reply.status(500).send({ error: "Failed to parse service account file", details: error instanceof Error ? error.message : String(error) });
     }
   });
 

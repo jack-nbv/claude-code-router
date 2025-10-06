@@ -1164,37 +1164,11 @@ export function Providers() {
                             const filePath = e.target.value;
                             setVertexCredentials(prev => ({ ...prev, keyFile: filePath }));
                             
-                            // Try to auto-extract project ID from file
+                            // Auto-extract project ID via backend API when path changes
                             if (filePath && filePath.endsWith('.json')) {
-                              // Use fetch or FileReader if available
-                              fetch(filePath)
-                                .then(res => res.text())
-                                .then(content => {
-                                  const projectId = extractProjectIdFromJson(content);
-                                  if (projectId && !vertexCredentials.project) {
-                                    setVertexCredentials(prev => ({ ...prev, project: projectId }));
-                                  }
-                                })
-                                .catch(() => {
-                                  // File read failed, user will need to enter project manually
-                                });
-                            }
-                          }}
-                          onBlur={async (e) => {
-                            const newPath = e.target.value;
-                            if (newPath && newPath.endsWith('.json')) {
-                              // Try to auto-extract project ID from file using backend API
-                              try {
-                                const response = await fetch('/api/parse-service-account', {
-                                  method: 'POST',
-                                  headers: {
-                                    'Content-Type': 'application/json',
-                                  },
-                                  body: JSON.stringify({ filePath: newPath }),
-                                });
-                                
-                                if (response.ok) {
-                                  const data = await response.json();
+                              // Use the backend API to read and parse the file
+                              api.post<{ projectId: string }>('/parse-service-account', { filePath })
+                                .then((data) => {
                                   if (data.projectId) {
                                     setVertexCredentials(prev => ({
                                       ...prev,
@@ -1202,8 +1176,27 @@ export function Providers() {
                                     }));
                                     setIsProjectIdAutoFilled(true);
                                   }
-                                } else {
-                                  console.error('Failed to parse service account file');
+                                })
+                                .catch((error) => {
+                                  console.error('Error parsing service account:', error);
+                                });
+                            } else if (!filePath) {
+                              // Clear auto-fill flag when path is cleared
+                              setIsProjectIdAutoFilled(false);
+                            }
+                          }}
+                          onBlur={async (e) => {
+                            const newPath = e.target.value;
+                            if (newPath && newPath.endsWith('.json')) {
+                              // Try to auto-extract project ID from file using backend API
+                              try {
+                                const data = await api.post<{ projectId: string }>('/parse-service-account', { filePath: newPath });
+                                if (data.projectId) {
+                                  setVertexCredentials(prev => ({
+                                    ...prev,
+                                    project: data.projectId
+                                  }));
+                                  setIsProjectIdAutoFilled(true);
                                 }
                               } catch (error) {
                                 console.error('Error parsing service account:', error);
@@ -1256,15 +1249,17 @@ export function Providers() {
                           placeholder="my-gcp-project"
                           value={vertexCredentials.project}
                           onChange={(e) => {
-                            setVertexCredentials(prev => ({ ...prev, project: e.target.value }));
-                            setIsProjectIdAutoFilled(false);
+                            // Only allow manual changes if not auto-filled
+                            if (!isProjectIdAutoFilled) {
+                              setVertexCredentials(prev => ({ ...prev, project: e.target.value }));
+                            }
                           }}
                           readOnly={isProjectIdAutoFilled}
                           disabled={isProjectIdAutoFilled}
                           className={isProjectIdAutoFilled ? "bg-gray-100 cursor-not-allowed" : ""}
                         />
                         <p className="text-xs text-gray-500">
-                          {isProjectIdAutoFilled ? "Auto-filled from service account (read-only)" : "Will be auto-extracted if possible"}
+                          {isProjectIdAutoFilled ? "🔒 Auto-extracted from key file (read-only)" : "Will be auto-extracted if possible"}
                         </p>
                       </div>
                       <div className="space-y-2">
