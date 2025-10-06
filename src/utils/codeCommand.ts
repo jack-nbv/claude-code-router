@@ -1,5 +1,6 @@
 import { spawn, type StdioOptions } from "child_process";
 import { execSync } from "child_process";
+import { existsSync } from "fs";
 import { readConfigFile } from ".";
 import { closeService } from "./close";
 import {
@@ -53,9 +54,26 @@ export async function executeCodeCommand(args: string[] = []) {
   const claudePath = config?.CLAUDE_PATH || process.env.CLAUDE_PATH || "claude";
 
   // Check if claude command exists
-  try {
-    execSync(`command -v ${claudePath}`, { stdio: 'pipe' });
-  } catch (error) {
+  let commandExists = false;
+  
+  // Check if it's a full path (contains path separators)
+  if (claudePath.includes('/') || claudePath.includes('\\')) {
+    // For full paths, check if file exists directly
+    commandExists = existsSync(claudePath);
+  } else {
+    // For command names, use system command to check PATH
+    try {
+      const checkCommand = process.platform === 'win32' 
+        ? `where ${claudePath}` 
+        : `command -v ${claudePath}`;
+      execSync(checkCommand, { stdio: 'pipe' });
+      commandExists = true;
+    } catch (error) {
+      commandExists = false;
+    }
+  }
+
+  if (!commandExists) {
     console.error(`Error: Claude Code command not found: '${claudePath}'`);
     console.log("\nPlease do one of the following:");
     console.log("1. Install Claude Code globally:");
